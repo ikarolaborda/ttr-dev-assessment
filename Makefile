@@ -12,7 +12,10 @@ help:
 	" make mig: Rodar as migrations e seeders manualmente \n"
 
 build:
-	cp .env.example .env; export COMPOSE_FILE=docker-compose.yml; docker-compose --env-file .env up -d --build
+	export DOCKER_DEFAULT_PLATFORM=linux/amd64; \
+	cp .env.example .env; \
+	export COMPOSE_FILE=docker-compose.yml; \
+	docker-compose --env-file .env up -d --build
 
 dup:
 	export COMPOSE_FILE=docker-compose.yml; docker-compose up -d
