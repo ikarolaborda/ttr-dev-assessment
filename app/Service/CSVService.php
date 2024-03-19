@@ -9,54 +9,78 @@ class CSVService
         $data = [];
         if (($handle = fopen($path, 'r')) !== false) {
             while (($row = fgetcsv($handle, 0, ';')) !== false) {
-                $data[] = $row;
+                $data[] = $this->normalizeRow($row);
             }
             fclose($handle);
         }
         return $data;
     }
 
-
     public function findDifferences(array $data1, array $data2): array
     {
-        // Convert to associative arrays for comparison
-        $assocData1 = $this->toAssocArray($data1);
-        $assocData2 = $this->toAssocArray($data2);
+        /* Descobri que o DiffNow utiliza comparação binária, dessa forma, não é necessario converter em array associativo
+        Os arrays abaixo foram "normalizados" para facilitar a comparação
+         */
+        $assocData1 = $data1;
+        $assocData2 = $data2;
 
         $unchanged = [];
         $updated = [];
         $added = [];
 
-        foreach ($assocData2 as $id => $row) {
-            if (isset($assocData1[$id])) {
-                if ($row === $assocData1[$id]) {
-                    $unchanged[$id] = $row;
-                } else {
-                    $updated[$id] = ['before' => $assocData1[$id], 'after' => $row];
+        foreach ($assocData2 as $lineNumber2 => $row2) {
+            $matchFound = false;
+            foreach ($assocData1 as $lineNumber1 => $row1) {
+                $similarity = $this->calculateRowSimilarity($row1, $row2);
+                if ($similarity == 1) {
+                    /* resultado exato, descartamos alterações */
+                    $unchanged[] = $row2;
+                    $matchFound = true;
+                    break;
+                } elseif ($similarity >= 0.9) {
+                    /* resultado similar em 90%, consideramos como atualizado */
+                    $updated[] = ['old' => $row1, 'new' => $row2];
+                    $matchFound = true;
+                    break;
                 }
-            } else {
-                $added[$id] = $row;
+            }
+            if (!$matchFound) {
+                /* Linha não encontrada no primeiro arquivo, consideramos como nova */
+                $added[] = $row2;
             }
         }
 
         return [
-            'unchanged' => $unchanged,
-            'updated' => $updated,
-            'added' => $added,
+            'unchanged' => count($unchanged),
+            'updated' => count($updated),
+            'added' => count($added),
         ];
     }
 
-    protected function toAssocArray(array $data): array
+    protected function normalizeRow(array $row): array
     {
-        $assocArray = [];
-        foreach ($data as $index => $row) {
-            if ($index === 0) continue; // Skip headers
-            $assocArray[$row[0]] = $row; // Use the first column (e.g., cnpj) as the key
-        }
-        return $assocArray;
+        return array_map([$this, 'normalizeField'], $row);
     }
 
+    protected function normalizeField($field): string
+    {
+        /* Precisamos de normalizar o campo para remover espacos em branco, uma vez que a comparação é binária */
+        return trim($field);
+    }
 
+    protected function calculateRowSimilarity(array $row1, array $row2): float
+    {
 
+        /* Este algoritmo calcula similaridade inspirado nos K-vizinhos mais próximos */
+        $totalFields = max(count($row1), count($row2));
+        $matchingFields = 0;
 
+        foreach ($row1 as $index => $value) {
+            if (isset($row2[$index]) && $this->normalizeField($value) == $this->normalizeField($row2[$index])) {
+                $matchingFields++;
+            }
+        }
+
+        return $matchingFields / $totalFields;
+    }
 }
